@@ -1,8 +1,13 @@
 #include "camera_utils.h"
 #include "camera_pins.h"
 #include <Arduino.h>
+#include "esp_log.h"
 
 bool inicializarCamera() {
+  esp_log_level_set("cam_hal", ESP_LOG_VERBOSE);
+  esp_log_level_set("camera", ESP_LOG_VERBOSE);
+  esp_log_level_set("sccb", ESP_LOG_VERBOSE);
+
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
@@ -23,7 +28,7 @@ bool inicializarCamera() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
 
-  config.xclk_freq_hz = 10000000;
+  config.xclk_freq_hz = 8000000; // TESTE DIAGNOSTICO: reduzido de 10MHz para 8MHz
   config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
 
@@ -56,6 +61,7 @@ bool inicializarCamera() {
     sensor->set_whitebal(sensor, 1);
     sensor->set_gain_ctrl(sensor, 1);
     sensor->set_exposure_ctrl(sensor, 1);
+    sensor->set_vflip(sensor, 1);
   }
 
   for (int i = 0; i < 3; i++) {
@@ -77,12 +83,18 @@ bool jpegValido(camera_fb_t *fb) {
 camera_fb_t* capturarFotoValida() {
   for (int tentativa = 0; tentativa < 3; tentativa++) {
     camera_fb_t *fb = esp_camera_fb_get();
-    if (fb && jpegValido(fb)) {
+    if (!fb) {
+      Serial.printf("[DEBUG-CAM] Tentativa %d: esp_camera_fb_get() retornou NULL (sem buffer disponivel)\n", tentativa + 1);
+      continue;
+    }
+    Serial.printf("[DEBUG-CAM] Tentativa %d: fb obtido, %d bytes. Validando JPEG...\n", tentativa + 1, fb->len);
+    if (jpegValido(fb)) {
+      Serial.println("[DEBUG-CAM] JPEG valido!");
       return fb;
     }
-    if (fb) {
-      esp_camera_fb_return(fb);
-    }
+    Serial.printf("[DEBUG-CAM] JPEG INVALIDO. Primeiros bytes: %02X %02X | Ultimos bytes: %02X %02X\n",
+                  fb->buf[0], fb->buf[1], fb->buf[fb->len-2], fb->buf[fb->len-1]);
+    esp_camera_fb_return(fb);
   }
   return nullptr;
 }
